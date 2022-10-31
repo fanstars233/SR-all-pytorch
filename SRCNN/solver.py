@@ -21,6 +21,7 @@ class SRCNNTrainer(object):
         self.optimizer = None
         self.scheduler = None
         self.seed = config.seed
+        self.outmodel = 'model/model_srcnn.pth'
         self.upscale_factor = config.upscale_factor
         self.training_loader = training_loader
         self.testing_loader = testing_loader
@@ -40,7 +41,7 @@ class SRCNNTrainer(object):
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[50, 75, 100], gamma=0.5)
 
     def save_model(self):
-        model_out_path = "model_path.pth"
+        model_out_path = "model/model_srcnn.pth"
         torch.save(self.model, model_out_path)
         print("Checkpoint saved to {}".format(model_out_path))
 

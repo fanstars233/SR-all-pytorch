@@ -11,6 +11,7 @@ def is_image_file(filename):
 
 def load_img(filepath):
     img = Image.open(filepath).convert('YCbCr')
+    # Y为亮度，CbCr为色度信号
     y, _, _ = img.split()
     return y
 

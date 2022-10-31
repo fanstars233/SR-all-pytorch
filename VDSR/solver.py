@@ -71,7 +71,7 @@ class VDSRTrainer(object):
             return transform(data)
 
     def save(self):
-        model_out_path = "VDSR_model_path.pth"
+        model_out_path = "model/model_vdsr.pth"
         torch.save(self.model, model_out_path)
         print("Checkpoint saved to {}".format(model_out_path))
 

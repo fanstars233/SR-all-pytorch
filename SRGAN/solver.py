@@ -8,6 +8,7 @@ import torch.backends.cudnn as cudnn
 from torchvision.models.vgg import vgg16
 from SRGAN.model import Generator, Discriminator
 from progress_bar import progress_bar
+import os
 
 
 class SRGANTrainer(object):
@@ -20,6 +21,8 @@ class SRGANTrainer(object):
         self.lr = config.lr
         self.nEpochs = config.nEpochs
         self.epoch_pretrain = 10
+        self.outpath_gan = "model/model_srgan.pth"
+        self.outpath_dis = "model/model_srgan_dis.pth"
         self.criterionG = None
         self.criterionD = None
         self.optimizerG = None
@@ -40,6 +43,9 @@ class SRGANTrainer(object):
         self.netD.weight_init(mean=0.0, std=0.2)
         self.criterionG = nn.MSELoss()
         self.criterionD = nn.BCELoss()
+        if os.path.exists(self.outpath_gan):
+            self.netG = torch.load(self.outpath_gan).to(self.device)
+            self.netD = torch.load(self.outpath_dis).to(self.device)
         torch.manual_seed(self.seed)
 
         if self.GPU_IN_USE:
@@ -61,12 +67,10 @@ class SRGANTrainer(object):
         return x.data
 
     def save(self):
-        g_model_out_path = "SRGAN_Generator_model_path.pth"
-        d_model_out_path = "SRGAN_Discriminator_model_path.pth"
-        torch.save(self.netG, g_model_out_path)
-        torch.save(self.netD, d_model_out_path)
-        print("Checkpoint saved to {}".format(g_model_out_path))
-        print("Checkpoint saved to {}".format(d_model_out_path))
+        torch.save(self.netG, self.outpath_gan)
+        torch.save(self.netD, self.outpath_dis)
+        print("Checkpoint saved to {}".format(self.outpath_gan))
+        print("Checkpoint saved to {}".format(self.outpath_dis))
 
     def pretrain(self):
         self.netG.train()

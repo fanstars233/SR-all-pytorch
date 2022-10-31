@@ -2,6 +2,7 @@ from __future__ import print_function
 from math import log10
 
 import torch
+import os
 import torch.backends.cudnn as cudnn
 from FSRCNN.model import Net
 from progress_bar import progress_bar
@@ -15,6 +16,7 @@ class FSRCNNTrainer(object):
         self.model = None
         self.lr = config.lr
         self.nEpochs = config.nEpochs
+        self.outpath = 'model/model_fsrcnn.pth'
         self.criterion = None
         self.optimizer = None
         self.scheduler = None
@@ -26,6 +28,9 @@ class FSRCNNTrainer(object):
     def build_model(self):
         self.model = Net(num_channels=1, upscale_factor=self.upscale_factor).to(self.device)
         self.model.weight_init(mean=0.0, std=0.2)
+        if os.path.exists(self.outpath):
+            self.model = torch.load(self.outpath).to(self.device)
+            print('Pre-trained model have been loaded')
         self.criterion = torch.nn.MSELoss()
         torch.manual_seed(self.seed)
 
@@ -38,9 +43,8 @@ class FSRCNNTrainer(object):
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[50, 75, 100], gamma=0.5)  # lr decay
 
     def save_model(self):
-        model_out_path = "model_path.pth"
-        torch.save(self.model, model_out_path)
-        print("Checkpoint saved to {}".format(model_out_path))
+        torch.save(self.model, self.outpath)
+        print("Checkpoint saved to {}".format(self.outpath))
 
     def train(self):
         self.model.train()
@@ -77,6 +81,6 @@ class FSRCNNTrainer(object):
             print("\n===> Epoch {} starts:".format(epoch))
             self.train()
             self.test()
-            self.scheduler.step(epoch)
+            self.scheduler.step()
             if epoch == self.nEpochs:
                 self.save_model()
