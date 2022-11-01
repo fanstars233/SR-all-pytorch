@@ -9,6 +9,7 @@ import torchvision.transforms as transforms
 from DRCN.model import Net
 from progress_bar import progress_bar
 from PIL import Image
+import os
 
 
 class DRCNTrainer(object):
@@ -19,9 +20,11 @@ class DRCNTrainer(object):
         self.model = None
         self.lr = config.lr
         self.nEpochs = config.nEpochs
+        self.outpath = 'model/model_drcn.pth'
         self.criterion = None
         self.optimizer = None
         self.scheduler = None
+        self.psnr_test = 0
         self.seed = config.seed
         self.upscale_factor = config.upscale_factor
         self.training_loader = training_loader
@@ -39,6 +42,11 @@ class DRCNTrainer(object):
     def build_model(self):
         self.model = Net(num_channels=1, base_channel=64, num_recursions=self.num_recursions, device=self.device).to(self.device)
         self.model.weight_init()
+
+        if os.path.exists(self.outpath):
+            self.model = torch.load(self.outpath).to(self.device)
+            print('Pre-trained model have been loaded')
+        
         self.criterion = nn.MSELoss()
         torch.manual_seed(self.seed)
 
@@ -51,15 +59,15 @@ class DRCNTrainer(object):
         param_groups = [{'params': list(self.model.parameters())}]
         param_groups += [{'params': [self.model.w]}]
         self.optimizer = optim.Adam(param_groups, lr=self.lr)
-        self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[50, 75, 100], gamma=0.5)  # lr decay
+        self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[20, 40, 60], gamma=0.5)  # lr decay
 
     def img_preprocess(self, data, interpolation='bicubic'):
         if interpolation == 'bicubic':
-            interpolation = Image.BICUBIC
+            interpolation = transforms.InterpolationMode.BICUBIC
         elif interpolation == 'bilinear':
-            interpolation = Image.BILINEAR
+            interpolation = transforms.InterpolationMode.BILINEAR
         elif interpolation == 'nearest':
-            interpolation = Image.NEAREST
+            interpolation = transforms.InterpolationMode.NEAREST
 
         size = list(data.shape)
 
@@ -83,9 +91,8 @@ class DRCNTrainer(object):
             return transform(data)
 
     def save(self):
-        model_out_path = "model/model_drcn.pth"
-        torch.save(self.model, model_out_path)
-        print("Checkpoint saved to {}".format(model_out_path))
+        torch.save(self.model, self.outpath)
+        print("Checkpoint saved to {}".format(self.outpath))
 
     def train(self):
         """
@@ -97,7 +104,7 @@ class DRCNTrainer(object):
             data = self.img_preprocess(data)  # resize input image size
             data, target = data.to(self.device), target.to(self.device)
             target_d, output = self.model(data)
-
+            self.optimizer.zero_grad()
             # loss1
             loss_1 = 0
             for d in range(self.num_recursions):
@@ -137,16 +144,18 @@ class DRCNTrainer(object):
                 psnr = 10 * log10(1 / mse.item())
                 avg_psnr += psnr
                 progress_bar(batch_num, len(self.testing_loader), 'PSNR: %.4f' % (avg_psnr / (batch_num + 1)))
-
-        print("    Average PSNR: {:.4f} dB".format(avg_psnr / len(self.testing_loader)))
+        self.psnr_test = avg_psnr / len(self.testing_loader)
+        print("    Average PSNR: {:.4f} dB".format(self.psnr_test))
 
     def run(self):
         self.build_model()
+        psnr_best = 0
         for epoch in range(1, self.nEpochs + 1):
             print("\n===> Epoch {} starts:".format(epoch))
             self.loss_alpha = max(0.0, self.loss_alpha - self.loss_alpha_decay)
             self.train()
             self.test()
-            self.scheduler.step(epoch)
-            if epoch == self.nEpochs:
+            self.scheduler.step()
+            if self.psnr_test > psnr_best:
                 self.save()
+                psnr_best = self.psnr_test

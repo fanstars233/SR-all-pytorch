@@ -29,6 +29,7 @@ class SRGANTrainer(object):
         self.optimizerD = None
         self.feature_extractor = None
         self.scheduler = None
+        self.psnr_test = 0
         self.seed = config.seed
         self.upscale_factor = config.upscale_factor
         self.num_residuals = 16
@@ -46,6 +47,7 @@ class SRGANTrainer(object):
         if os.path.exists(self.outpath_gan):
             self.netG = torch.load(self.outpath_gan).to(self.device)
             self.netD = torch.load(self.outpath_dis).to(self.device)
+            print('Pre-trained model have been loaded')
         torch.manual_seed(self.seed)
 
         if self.GPU_IN_USE:
@@ -57,8 +59,8 @@ class SRGANTrainer(object):
 
         self.optimizerG = optim.Adam(self.netG.parameters(), lr=self.lr, betas=(0.9, 0.999))
         self.optimizerD = optim.SGD(self.netD.parameters(), lr=self.lr / 100, momentum=0.9, nesterov=True)
-        self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizerG, milestones=[50, 75, 100], gamma=0.5)  # lr decay
-        self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizerD, milestones=[50, 75, 100], gamma=0.5)  # lr decay
+        self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizerG, milestones=[40, 60, 80], gamma=0.5)  # lr decay
+        self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizerD, milestones=[40, 60, 80], gamma=0.5)  # lr decay
 
     @staticmethod
     def to_data(x):
@@ -133,11 +135,13 @@ class SRGANTrainer(object):
                 psnr = 10 * log10(1 / mse.item())
                 avg_psnr += psnr
                 progress_bar(batch_num, len(self.testing_loader), 'PSNR: %.4f' % (avg_psnr / (batch_num + 1)))
-
-        print("    Average PSNR: {:.4f} dB".format(avg_psnr / len(self.testing_loader)))
+        
+        self.psnr_test = avg_psnr / len(self.testing_loader)
+        print("    Average PSNR: {:.4f} dB".format(self.psnr_test))
 
     def run(self):
         self.build_model()
+        psnr_best = 0
         for epoch in range(1, self.epoch_pretrain + 1):
             self.pretrain()
             print("{}/{} pretrained".format(epoch, self.epoch_pretrain))
@@ -146,6 +150,7 @@ class SRGANTrainer(object):
             print("\n===> Epoch {} starts:".format(epoch))
             self.train()
             self.test()
-            self.scheduler.step(epoch)
-            if epoch == self.nEpochs:
+            self.scheduler.step()
+            if self.psnr_test > psnr_best:
                 self.save()
+                psnr_best = self.psnr_test

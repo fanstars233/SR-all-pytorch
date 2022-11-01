@@ -20,6 +20,7 @@ class FSRCNNTrainer(object):
         self.criterion = None
         self.optimizer = None
         self.scheduler = None
+        self.psnr_test = 0
         self.seed = config.seed
         self.upscale_factor = config.upscale_factor
         self.training_loader = training_loader
@@ -40,7 +41,7 @@ class FSRCNNTrainer(object):
             self.criterion.cuda()
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[50, 75, 100], gamma=0.5)  # lr decay
+        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[40, 60, 80], gamma=0.5)  # lr decay
 
     def save_model(self):
         torch.save(self.model, self.outpath)
@@ -73,14 +74,17 @@ class FSRCNNTrainer(object):
                 avg_psnr += psnr
                 progress_bar(batch_num, len(self.testing_loader), 'PSNR: %.4f' % (avg_psnr / (batch_num + 1)))
 
-        print("    Average PSNR: {:.4f} dB".format(avg_psnr / len(self.testing_loader)))
+        self.psnr_test = avg_psnr / len(self.testing_loader)
+        print("    Average PSNR: {:.4f} dB".format(self.psnr_test))
 
     def run(self):
         self.build_model()
+        psnr_best = 0
         for epoch in range(1, self.nEpochs + 1):
             print("\n===> Epoch {} starts:".format(epoch))
             self.train()
             self.test()
             self.scheduler.step()
-            if epoch == self.nEpochs:
-                self.save_model()
+            if self.psnr_test > psnr_best:
+                self.save()
+                psnr_best = self.psnr_test

@@ -1,7 +1,7 @@
 from __future__ import print_function
 
 from math import log10
-
+import os
 import torch
 import torch.backends.cudnn as cudnn
 
@@ -20,8 +20,9 @@ class SRCNNTrainer(object):
         self.criterion = None
         self.optimizer = None
         self.scheduler = None
+        self.psnr_test = 0
         self.seed = config.seed
-        self.outmodel = 'model/model_srcnn.pth'
+        self.outpath = 'model/model_srcnn.pth'
         self.upscale_factor = config.upscale_factor
         self.training_loader = training_loader
         self.testing_loader = testing_loader
@@ -32,18 +33,21 @@ class SRCNNTrainer(object):
         self.criterion = torch.nn.MSELoss()
         torch.manual_seed(self.seed)
 
+        if os.path.exists(self.outpath):
+            self.model = torch.load(self.outpath).to(self.device)
+            print('Pre-trained model have been loaded')
+
         if self.CUDA:
             torch.cuda.manual_seed(self.seed)
             cudnn.benchmark = True
             self.criterion.cuda()
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[50, 75, 100], gamma=0.5)
+        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[40, 60, 80], gamma=0.5)
 
     def save_model(self):
-        model_out_path = "model/model_srcnn.pth"
-        torch.save(self.model, model_out_path)
-        print("Checkpoint saved to {}".format(model_out_path))
+        torch.save(self.model, self.outpath)
+        print("Checkpoint saved to {}".format(self.outpath))
 
     def train(self):
         self.model.train()
@@ -72,14 +76,17 @@ class SRCNNTrainer(object):
                 avg_psnr += psnr
                 progress_bar(batch_num, len(self.testing_loader), 'PSNR: %.4f' % (avg_psnr / (batch_num + 1)))
 
-        print("    Average PSNR: {:.4f} dB".format(avg_psnr / len(self.testing_loader)))
+        self.psnr_test = avg_psnr / len(self.testing_loader)
+        print("    Average PSNR: {:.4f} dB".format(self.psnr_test))
 
     def run(self):
         self.build_model()
+        psnr_best = 0
         for epoch in range(1, self.nEpochs + 1):
             print("\n===> Epoch {} starts:".format(epoch))
             self.train()
             self.test()
-            self.scheduler.step(epoch)
-            if epoch == self.nEpochs:
-                self.save_model()
+            self.scheduler.step()
+            if self.psnr_test > psnr_best:
+                self.save()
+                psnr_best = self.psnr_test

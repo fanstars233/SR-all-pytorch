@@ -5,6 +5,7 @@ import torch.backends.cudnn as cudnn
 from PIL import Image
 from torchvision.transforms import ToTensor
 import numpy as np
+import torchvision.transforms as transforms
 
 # ===========================================================
 # Argument settings
@@ -18,8 +19,11 @@ parser.add_argument('--output', type=str, default='result',
                     help='where to save the output image')
 args = parser.parse_args()
 print(args)
+if args.model in ['vdsr', 'drcn']:
+    args.input = 'result/157055__.jpg'
 args.output = args.output+'/157055_'+args.model+'.jpg'
 args.model = 'model/model_'+args.model+'.pth'
+
 # ===========================================================
 # input image setting
 # ===========================================================
@@ -28,7 +32,6 @@ GPU_IN_USE = torch.cuda.is_available()
 GPU_IN_USE = gpu_use
 img = Image.open(args.input).convert('YCbCr')
 y, cb, cr = img.split()
-
 
 # ===========================================================
 # model import & setting

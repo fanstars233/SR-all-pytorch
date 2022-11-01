@@ -1,6 +1,7 @@
 from __future__ import print_function
 from math import log10
 
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -15,35 +16,40 @@ class DBPNTrainer(object):
         self.GPU_IN_USE = torch.cuda.is_available()
         self.device = torch.device('cuda' if self.GPU_IN_USE else 'cpu')
         self.model = None
-        self.lr = config.lr
-        self.nEpochs = config.nEpochs
+        self.lr = 0.002
+        self.nEpochs = 20
+        self.outpath = 'model/model_dbpn.pth'
         self.criterion = None
         self.optimizer = None
         self.scheduler = None
-        self.seed = config.seed
-        self.upscale_factor = config.upscale_factor
+        self.psnr_test = 0
+        self.seed = 123
+        self.upscale_factor = 4
         self.training_loader = training_loader
         self.testing_loader = testing_loader
 
     def build_model(self):
-        self.model = DBPN(num_channels=1, base_channels=64, feat_channels=256, num_stages=7,
+        self.model = DBPN(num_channels=3, base_channels=64, feat_channels=256, num_stages=7,
                           scale_factor=self.upscale_factor).to(self.device)
         self.model.weight_init()
         self.criterion = nn.L1Loss()
         torch.manual_seed(self.seed)
 
+        # if os.path.exists(self.outpath):
+        #     self.model = torch.load(self.outpath).to(self.device)
+        #     print('Pre-trained model have been loaded')
+        
         if self.GPU_IN_USE:
             torch.cuda.manual_seed(self.seed)
             cudnn.benchmark = True
             self.criterion.cuda()
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
-        self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[50, 75, 100], gamma=0.5)  # lr decay
+        self.scheduler = optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[40, 60, 80], gamma=0.5)  # lr decay
 
     def save(self):
-        model_out_path = "model/model_dbpn.pth"
-        torch.save(self.model, model_out_path)
-        print("Checkpoint saved to {}".format(model_out_path))
+        torch.save(self.model, self.outpath)
+        print("Checkpoint saved to {}".format(self.outpath))
 
     def train(self):
         self.model.train()
@@ -72,14 +78,17 @@ class DBPNTrainer(object):
                 avg_psnr += psnr
                 progress_bar(batch_num, len(self.testing_loader), 'PSNR: %.4f' % (avg_psnr / (batch_num + 1)))
 
-        print("    Average PSNR: {:.4f} dB".format(avg_psnr / len(self.testing_loader)))
+        self.psnr_test = avg_psnr / len(self.testing_loader)
+        print("    Average PSNR: {:.4f} dB".format(self.psnr_test))
 
     def run(self):
         self.build_model()
+        psnr_best = 0
         for epoch in range(1, self.nEpochs + 1):
             print("\n===> Epoch {} starts:".format(epoch))
             self.train()
             self.test()
-            self.scheduler.step(epoch)
-            if epoch == self.nEpochs:
+            self.scheduler.step()
+            if self.psnr_test > psnr_best:
                 self.save()
+                psnr_best = self.psnr_test
